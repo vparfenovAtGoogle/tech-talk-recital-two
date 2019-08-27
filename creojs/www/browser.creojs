@@ -1,0 +1,48 @@
+const Browser = (function () {
+    let callCounter = 0;
+    const calls = {}
+    function caller (name) {
+        function browserCall(...args) {
+            const id = '' + callCounter++
+            $CALLBROWSER (`if (typeof CreoJS !== 'undefined') CreoJS.$CALLBROWSER ('${id}', function () {return ${name} (${args.map (item=>JSON.stringify (item)).join ()})})`)
+            return new Promise ((resolve, reject) => calls [id] = {resolve, reject})
+        }
+        return new Proxy (browserCall, {
+            get (receiver, member) {
+                return caller (`${name}[${JSON.stringify (member)}]`)
+            }
+        })
+    }
+    return new Proxy (
+        {
+            $ONRETURN: function (data) {
+                const handler = calls [data.id]
+                if (handler) {
+                    delete calls [data.id]
+                    if (data.exception) {
+                        handler.reject (data.exception)
+                    }
+                    else if (data.error) {
+                        handler.reject (new Error (data.error))
+                    }
+                    else {
+                        handler.resolve (data.value)
+                    }
+                }
+            }
+        },
+        {
+            get (receiver, member) {
+                if (! (member in receiver)) {
+                    return caller (member)
+                }
+                else {
+                    const value = receiver [member]
+                    return (typeof value == 'function') ? value.bind (receiver) : value
+                }
+            }
+        })
+}) ()
+
+function getOrigin () {return window.location.origin}
+function alert (msg) {Browser.alert (msg)}

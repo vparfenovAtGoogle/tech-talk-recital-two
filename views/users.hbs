@@ -1,0 +1,21 @@
+<h2>{{title}} ({{users.length}})</h2>
+<table class="table table-hover table-condensed table-bordered table-sm">
+  <thead class="thead-dark"><th class="w-30">User Name</th><th class="w-10">Models</th></thead>
+  {{#each users}}
+  <tr>
+    <td><a name="{{username}}">{{username}}</a></td>
+    <td>
+      <table>
+      <thead><th class="w-30">File Name</th><th class="w-60">Changes</th><th class="w-10">Submissions</th></thead>
+      {{#each models}}
+      <tr>
+        <td><a href="/models?username={{../username}}&model={{name}}">{{name}}</a></td>
+        <td>{{changes.length}}</td>
+        <td>{{submissions.length}}</td>
+      </tr>
+      {{/each}}
+      </table>
+    </td>
+  </tr>
+  {{/each}}
+</table>

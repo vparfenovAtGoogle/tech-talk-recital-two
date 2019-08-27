@@ -1,0 +1,75 @@
+{
+	const session = pfcSession.Current
+
+	function askQuestion (question) {
+		return session.showDialog (
+			{label: question, type: pfcMessageDialogType.MESSAGE_QUESTION, focus: pfcMessageButton.MESSAGE_BUTTON_NO,
+			 buttons: [pfcMessageButton.MESSAGE_BUTTON_YES, pfcMessageButton.MESSAGE_BUTTON_NO]}
+		) === pfcMessageButton.MESSAGE_BUTTON_YES
+	}
+
+	function executeQueryDebug (query) {
+		rest.call (query, '/api')
+			.then (res => print (`REST response: ${JSON.stringify (res, null, 2)}`))
+			.catch (res => print (`Rest error: ${JSON.stringify (res, null, 2)}`))
+	}
+
+	function executeQuery (query) {
+		return rest.call (query, '/api')
+	}
+
+	function uploadFileAs ({fileName, fieldName, appdir='public/app/images'}) {
+		fieldName = fieldName || fileName
+		print (`uploading ${fileName} as ${fieldName}`)
+    rest.uploadFile ({filePath: fileName, fieldName, args: {appdir}}, '/files/memory')
+      .then (res => print (`Upload response: ${JSON.stringify (res, null, 2)}`))
+      .catch (res => print (`Upload error: ${JSON.stringify (res, null, 2)}`))
+	}
+
+	function registerFeatureModification (id, type, modification) {
+		const window = session.CurrentWindow
+		const model = window.GetModel()
+		if (model) {
+			const imageName = `${model.FileName}.jpg`
+			window.Refit()
+			session.GetCurrentSelectionBuffer ().Clear()
+			session.ExportCurrentRasterImage (imageName, pfcJPEGImageExportInstructions.Create (1.0, 1.0))
+			//executeQueryDebug (rest.query.getUser(username).getModel (model.FileName).addChange(type, id, modification))
+			executeQuery (rest.query.getUser(username).getModel (model.FileName).addChange(type, id, modification))
+				.then (res => {
+					const session = res.result
+					const model = session.getUser.getModel
+					const change = model.addChange
+					// print (`fileName: ${imageName}, fieldName: ${change.imageFile}, appdir: ${session.imagesUri}/${model.uri}`)
+					uploadFileAs ({fileName: imageName, fieldName: change.imageFile, appdir: `${session.imagesUri}/${model.uri}`})
+				})
+      	.catch (res => print (`Upload error: ${JSON.stringify (res, null, 2)}`))
+		}
+	}
+
+	const solidListener = {
+		OnAfterFeatureCreate: (solid, feature) => registerFeatureModification (feature.Id, feature.FeatType.string (), 'create'),
+		OnAfterFeatureDelete: (solid, id) => registerFeatureModification (feature.Id, null, 'delete')
+	}
+	CreoJS.addListener (session, pfcSolidActionListener.create (solidListener))
+
+	const modelListener = {
+		OnAfterModelSave : modelDescr => {
+			const fileName = modelDescr.GetFileName()
+			if (askQuestion (`Model ${fileName} was saved, Would you like submitting it for evaluation?\nThis cannot be undone`)) {
+				const uploadFileName = session.GetModelFromDescr(modelDescr).backup (session.GetCurrentDirectory())
+				executeQuery (rest.query.getUser(username).getModel (fileName).addSubmission())
+					.then (res => {
+						const session = res.result
+						const model = session.getUser.getModel
+						const submission = model.addSubmission
+						print (`fileName: ${uploadFileName}, fieldName: ${submission.fileName}, appdir: ${session.modelsUri}/${model.uri}`)
+						//uploadFileAs ({fileName: uploadFileName, fieldName: change.imageFile, appdir: `${session.imagesUri}/${model.uri}`})
+						uploadFileAs ({fileName: `${uploadFileName}`, fieldName: submission.fileName, appdir: `${session.modelsUri}/${model.uri}`})
+					})
+					.catch (res => print (`Upload error: ${JSON.stringify (res, null, 2)}`))
+			}
+		}
+	}
+	CreoJS.addListener (session, pfcModelActionListener.create (modelListener))
+}

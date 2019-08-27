@@ -1,0 +1,299 @@
+{
+	Function.prototype.mixWith = function (...mixins) {
+		let copyProps = (target, source) => {
+			Object.getOwnPropertyNames(source)
+				.concat(Object.getOwnPropertySymbols(source))
+				.forEach(prop => {
+					if (!target.hasOwnProperty (prop) &&
+							!prop.match(/^(?:constructor|prototype|arguments|caller|name|bind|call|apply|length)$/))
+					{
+						Object.defineProperty(target, prop, Object.getOwnPropertyDescriptor(source, prop))
+					}
+				})
+    }
+		const base = this
+    mixins.forEach(mixin => {
+        copyProps(base.prototype, mixin.prototype)
+        copyProps(base, mixin)
+    })
+		try {
+			getClassChildren (base)
+				.map (name=>eval(name))
+				.forEach (base=>base.mixWith (...mixins))
+		} catch (exc) {/* getClassChildren() doesn't support base */}
+	}
+
+	pfcParamValue.mixWith (class {
+		toString () {return String (this.Value)}
+		toJSON () {return {$type: 'pfcParamValue', discr:this.discr.string(), value: this.Value}}
+		static fromJSON (json) {
+			if (json.$type !== 'pfcParamValue') throw new Error ('exepected $type===pfcParamValue')
+			const value = pfcParamValue.Empty
+			const type = json.discr
+			value.setValueOf (pfcParamValueType.values().find (v=>v.string()===type), json.value)
+			return value
+		}
+		setValueOf (type, value) {
+			if (!type) type = pfcParamValue.typeOf (value) || pfcParamValueType.PARAM_STRING
+			switch (type) {
+				case pfcParamValueType.PARAM_STRING: this.StringValue = String (value); break;
+				case pfcParamValueType.PARAM_INTEGER: this.IntValue = value; break;
+				case pfcParamValueType.PARAM_BOOLEAN: this.BoolValue = Boolean (value); break;
+				case pfcParamValueType.PARAM_DOUBLE: this.DoubleValue = value; break;
+				case pfcParamValueType.PARAM_NOTE: this.NoteId = value; break;
+				default: throw 'wrong parameter type'; break;
+			}
+		}
+		get Value () {
+			switch (this.discr) {
+				case pfcParamValueType.PARAM_STRING: return this.StringValue
+				case pfcParamValueType.PARAM_INTEGER: return this.IntValue
+				case pfcParamValueType.PARAM_BOOLEAN: return this.BoolValue
+				case pfcParamValueType.PARAM_DOUBLE: return this.DoubleValue
+				case pfcParamValueType.PARAM_NOTE: return this.NoteId
+				default: return undefined;
+			}
+		}
+		set Value (value) {this.setValueOf (undefined, value)}
+		static typeOf (value) {
+			if (Number.isInteger (value)) return pfcParamValueType.PARAM_INTEGER
+			if (typeof value === 'number') return pfcParamValueType.PARAM_DOUBLE
+			if (typeof value === 'boolean') return pfcParamValueType.PARAM_BOOLEAN
+			if (typeof value === 'string') return pfcParamValueType.PARAM_STRING
+			return undefined
+		}
+		static get Empty () {
+			// hack!: WebLink doesn't provide way to create a new parameter value
+			// use some existing value and store it in session for future reuse
+			let emptyValue = pfcSession.Storage ['${EMPTY_PARAM_VALUE}']
+			if (!emptyValue) {
+				function saveEmptyValue (param) {
+					const value = param.Value
+					pfcSession.Storage ['${EMPTY_PARAM_VALUE}'] = value
+					return value
+				}
+				const session = pfcSession.Current
+				for (const model of session.ListModels ()) {
+					for (const param of model.ListParams()) {
+						return saveEmptyValue (param)
+					}
+				}
+				const part = session.openModelFromDir (pfcSession.CreoJSRootDir, 'empty_with_params.prt')
+				if (part) {
+					const value = saveEmptyValue (part.ListParams()[0])
+					part.Erase()
+					return value
+				}
+				throw new Error ('cannot obtain empty value')
+			}
+			return emptyValue
+		}
+	})
+
+	pfcArgValue.mixWith (class {
+		toString () {return String (this.Value)}
+		get Value () {
+			switch (this.discr) {
+				case pfcArgValueType.ARG_V_INTEGER: return this.IntValue
+				case pfcArgValueType.ARG_V_DOUBLE: return this.DoubleValue
+				case pfcArgValueType.ARG_V_BOOLEAN: return this.BoolValue
+				case pfcArgValueType.ARG_V_ASCII_STRING: return this.ASCIIStringValue
+				case pfcArgValueType.ARG_V_WSTRING:
+				case pfcArgValueType.ARG_V_STRING: return this.StringValue
+				case pfcArgValueType.ARG_V_SELECTION: return this.SelectionValue
+				case pfcArgValueType.ARG_V_TRANSFORM: return this.TransformValue
+				case pfcArgValueType.ARG_V_POINTER: throw new Error ('Pointer values are not supported')
+				default: return undefined
+			}
+		}
+		set Value (value) {
+			this.setValueOf (undefined, value)
+		}
+		setValueOf (type, value) {
+			if (!type) type = pfcArgValue.typeOf (value)
+			switch (type) {
+				case pfcArgValueType.ARG_V_INTEGER: this.IntValue = value; break
+				case pfcArgValueType.ARG_V_DOUBLE: this.DoubleValue = value; break
+				case pfcArgValueType.ARG_V_BOOLEAN: this.BoolValue = value; break
+				case pfcArgValueType.ARG_V_ASCII_STRING: this.ASCIIStringValue = value; break
+				case pfcArgValueType.ARG_V_WSTRING:
+				case pfcArgValueType.ARG_V_STRING: this.StringValue = value; break
+				case pfcArgValueType.ARG_V_SELECTION: this.SelectionValue = value; break
+				case pfcArgValueType.ARG_V_TRANSFORM: this.TransformValue = value; break
+				default: throw new Error (`Cannot set pfcArgValue with ${value}`)
+			}
+		}
+		static typeOf (value) {
+			if (Number.isInteger (value)) return pfcArgValueType.ARG_V_INTEGER
+			else if (typeof value === 'number') return pfcArgValueType.ARG_V_DOUBLE
+			if (typeof value === 'boolean') return pfcArgValueType.ARG_V_BOOLEAN
+			if (typeof value === 'string') return pfcArgValueType.ARG_V_STRING
+			if (value) {
+				if (value.instanceOf (pfcTransform3D)) return pfcArgValueType.ARG_V_TRANSFORM
+				if (value.instanceOf (pfcSelection)) return pfcArgValueType.ARG_V_SELECTION
+			}
+			return undefined
+		}
+		static fromString (s) {return pfcCreateStringArgValue (s)}
+		static fromBool (b) {return pfcCreateBoolArgValue (b)}
+		static fromDouble (d) {return pfcCreateDoubleArgValue (d)}
+		static fromInt (i) {return pfcCreateIntArgValue (i)}
+		static fromSelection (s) {return pfcCreateSelectionArgValue (s)}
+		static fromTransform (t) {return pfcCreateTransformArgValue (t)}
+		static create (value) {
+			switch (pfcArgValue.typeOf (value)) {
+				case pfcArgValueType.ARG_V_INTEGER: return pfcCreateIntArgValue (value)
+				case pfcArgValueType.ARG_V_DOUBLE: return pfcCreateDoubleArgValue (value)
+				case pfcArgValueType.ARG_V_BOOLEAN: return pfcCreateBoolArgValue (value)
+				case pfcArgValueType.ARG_V_ASCII_STRING: return pfcCreateASCIIStringArgValue (value)
+				case pfcArgValueType.ARG_V_WSTRING:
+				case pfcArgValueType.ARG_V_STRING: return pfcCreateStringArgValue (value)
+				case pfcArgValueType.ARG_V_SELECTION: return pfcCreateSelectionArgValue (value)
+				case pfcArgValueType.ARG_V_TRANSFORM: return pfcCreateTransformArgValue (value)
+			}
+			throw new Error (`Cannot create pfcArgValue with ${value}`)
+		}
+	})
+	
+	function createAppDataProxy (appName, prefs) {
+		const asPath = prop => appName ? `${appName}/${prop}.json` : `${prop}.json`
+		return new Proxy (new Object(), {
+			get (obj, prop) {try {return getFromAppData(`${asPath (prop)}`, prefs)} catch (ex) {return undefined}},
+			set (obj, prop, value) {saveToAppData (`${asPath (prop)}`, value, prefs)},
+			deleteProperty (obj, prop, descriptor) {deleteFromAppData (`${asPath (prop)}`, prefs)}
+		})
+	}
+
+	function getCommandRegistry () {
+		const COMMAND_REGISTRY = '${COMMAND_LISTENERS}'
+		const registry = pfcSession.Storage [COMMAND_REGISTRY]
+		if (!registry) {
+			return pfcSession.Storage [COMMAND_REGISTRY] = {}
+		}
+		return registry
+	}
+
+	pfcSession.mixWith (class {
+		static get Current () {return pfcGetCurrentSession ()}
+		static get CreoJSRootDir () {return `${pfcSession.Current.GetEnvironmentVariable ('PRO_DIRECTORY').replace(/\\/g, '/')}/apps/creojs/creojsweb`}
+		static get AppData () {return createAppDataProxy ()}
+		static get Preferences () {return createAppDataProxy (undefined, true)}
+		static get Apps () {return new Proxy (new Object(), {
+			get (obj, prop) {return new class {
+				get Data () {return createAppDataProxy (prop)}
+				get Prefs () {return createAppDataProxy (prop, true)}
+			} ()}
+		})}
+		static get Storage () {return new Proxy (new Object(), {
+			get (obj, prop) {return getFromSession (prop)},
+			set (obj, prop, value) {saveToSession (prop, value)},
+			deleteProperty (obj, prop, descriptor) {removeFromSession (prop)}
+		})}
+		openModelFromSearchPath (filename) {
+			return this.RetrieveModel (pfcModelDescriptor.CreateFromFileName (filename))
+		}
+		openModelFromDir (dir, filename) {
+			const descr = pfcModelDescriptor.CreateFromFileName (filename)
+			descr.Path = dir
+			return this.RetrieveModelWithOpts (descr, null)
+		}
+		createUICommand ({name, label, icon, action, access, messages = "creo_js_messages.txt"}) {
+			const commandRegistry = getCommandRegistry ()
+			let actionCB = commandRegistry [name]
+			let command = null
+			if (actionCB) {
+				command = this.UIGetCommand	(name)
+			}
+			else {
+				command = this.UICreateCommand	(name, pfcUICommandActionListener.create ({OnCommand: function () {
+					const action = commandRegistry [name]
+					if (action) action ()
+				}}))
+			}
+			commandRegistry [name] = action
+			if (label) command.Designate (messages, label)
+			if (icon) command.SetIcon (icon)
+			if (typeof access === 'function') {
+				CreoJS.addListener (command, pfcUICommandAccessListener.create (
+					{OnCommandAccess: arg => pfcCommandAccess.from(access (arg))}))
+			}
+			return command
+		}
+		runUICommand (command, ...args) {
+			this.RunMacro ('~ Command `' + command + '`' + (args.length ? ` ${args.join(" ")}` : ''))
+		}
+		showDialog ({label, buttons = [pfcMessageButton.MESSAGE_BUTTON_OK], focus, type}) {
+			const opts = pfcMessageDialogOptions.Create ();
+			if (buttons) opts.SetButtons (buttons)
+			if (focus) opts.SetDefaultButton (focus)
+			if (type) opts.SetMessageDialogType (type)
+			return pfcSession.Current.UIShowMessageDialog (label, opts)
+		}
+		static invokeLater (runnable, interval) {
+			if (typeof runnable === 'function') {
+				if ((typeof interval === 'number') && (interval > 0)) {
+					const secs = Math.floor (interval)
+					const mcsecs = Math.floor ((interval-secs) * 1000000)
+					const timer = wfcCreateTimer (wfcTimerAction.create ({
+						OnTimer: function () {
+							const value = runnable ()
+							return (typeof value === 'boolean') ? value : false
+						}
+					}))
+					timer.Start (wfcTimeValue.Create (secs, mcsecs))
+					return timer
+				}
+				else {
+					wfcInvokeLater (wfcRunnableAction.create ({OnRun: runnable}))
+				}
+			}
+		}
+	})
+
+	pfcModelDescriptor.mixWith (class {
+		get fullFilePath () {
+			const descr = this
+			const fullPath = `${descr.GetPath ()}/${descr.GetFileName ()}.${descr.GetFileVersion()}`
+			const device = descr.GetDevice ()
+			return (device && device.length > 0) ? `${device}:${fullPath}` : fullPath
+		}
+	})
+	
+	pfcModel.mixWith (class {
+		backup (dir) {
+			const session = pfcSession.Current
+			const fileName = this.FileName
+			this.Backup (pfcModelDescriptor.CreateFromFileName (`${dir}/${fileName}`))
+			return session.ListFiles (`${fileName}`, pfcFileListOpt.FILE_LIST_LATEST, dir) [0].split (/[\\\/]/).pop ()
+		}
+	})
+	
+	pfcCommandAccess.mixWith (class {
+		static has (v) {return pfcCommandAccess.values().find (ev=>ev===v)}
+		static from (v) {return pfcCommandAccess.has (v) ? v : v ? pfcCommandAccess.ACCESS_AVAILABLE : pfcCommandAccess.ACCESS_UNAVAILABLE}
+	})
+}
+
+setOnContextClose (function () { session.removeActionListener (myListener); })
+
+//	for (const name in pfcParamValue.prototype) print (name)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,31 @@
+<h2>Student: <a href="/users#{{student}}">{{student}}</a></h2>
+<h3>Model: {{model}}</h3>
+<table class="table table-hover table-condensed table-bordered table-sm">
+  <thead class="thead-dark"><th class="w-10">Feature ID</th><th class="w-10">Feature Type</th><th class="w-10">Change Type</th><th class="w-10">Time</th><th class="w-10">Likes</th><th class="w-60">Image</th></thead>
+  {{#each changes}}
+  <tr>
+    <td>{{id}}</td>
+    <td>{{type}}</td>
+    <td style="text-align:center">{{modification}}</td>
+    <td>{{time}}</td>
+      {{#if submission}}
+        <td style="text-align:center; font-size:150%">
+          <span id="{{id}}">{{likes}}</span><br>
+          {{#if ../principal}}
+            <a title="Like this submission" href="javascript:likeSubmission ('{{id}}', '{{../student}}', '{{../model}}', '{{uuid}}', '{{../principal}}')">
+              <img height="32" width="32" src="/images/favorite-icon.png">
+            </a>
+          {{else}}
+            <img style="filter: brightness(75%);" title="Login to like this submission" height="32" width="32" src="/images/favorite-icon.png">
+          {{/if}}
+        </td><td>
+          <a title="Open in Creo" href="javascript:openInCreo ('{{submission}}')"><img style="border: 2px solid red ;border-radius: 25px;" height="150" width="150" src="{{url}}"></a>
+        </td>
+      {{else}}
+       <td></td><td>
+          <img style="border: 2px solid gray; border-radius: 25px;"  height="150" width="150" src="{{url}}">
+        </td>
+      {{/if}}
+  </tr>
+  {{/each}}
+</table>

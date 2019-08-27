@@ -1,0 +1,37 @@
+<html>
+<head>
+  <script src="creojsweb/creojs.js"></script>
+  <script type="text/creojs" src="creojsweb/browser.creojs"></script>
+  <script type="text/creojs" src="creojsweb/extend_pfc.creojs"></script>
+  <script type="text/creojs" src="creojsweb/rest_client.creojs"></script>
+  <script type="text/creojs" src="creojsweb/weblink.legacy.creojs"></script>
+  <script type="text/creojs" src="creojs/app.creojs"></script>
+  <script id="rest_init.creojs" type="text/creojs">
+    let rest = null
+    Browser.getOrigin ().then (url => {
+      rest = new RestClient (url)
+    })
+    function clearListeners () { CreoJS.clearListeners() }
+    const username = pfcSession.Current.GetEnvironmentVariable ('USERNAME')
+    print (`initialized for ${username}`)
+  </script>
+  <script>
+    function clearOutput () { document.getElementById ('output').innerText = '' }
+    if (true) CreoJS.$ADD_ON_UNLOAD (function () {CreoJS.clearListeners ()})
+    if (true) CreoJS.$ONPRINT = function (text) {
+      var output = document.getElementById ('output')
+      var line = document.createElement ('pre')
+      line.innerText = text
+      output.appendChild (line)
+    }
+    function getOrigin () {return window.location.origin}
+  </script>
+</head>
+<body>
+  <div style="margin-right:10px">
+    <button style="position:relative; float:right" onclick="clearOutput()">Clear</button>
+  </div>
+  <h4>Testing Creo.JS!</h4>
+  <div id=output></div>
+</body>
+</html>
